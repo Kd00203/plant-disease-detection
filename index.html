@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Plant Disease Detector</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4e8;
+      color: #1a2e05;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 2rem 1rem;
+    }
+    h1 { font-size: 2rem; color: #2d6a0e; margin-bottom: 0.3rem; }
+    p.subtitle { color: #5a7a3a; margin-bottom: 2rem; }
+
+    .card {
+      background: white; border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 2rem; max-width: 560px; width: 100%;
+    }
+    .drop-zone {
+      border: 2px dashed #8ab56a; border-radius: 12px;
+      padding: 2.5rem; text-align: center; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { background: #edf5e2; }
+    .drop-zone input { display: none; }
+    .drop-zone img#preview {
+      max-height: 220px; border-radius: 8px; margin-top: 1rem;
+      display: none; width: 100%; object-fit: contain;
+    }
+
+    button#predictBtn {
+      margin-top: 1.2rem; width: 100%; padding: 0.8rem;
+      background: #3a8c1c; color: white; border: none;
+      border-radius: 10px; font-size: 1rem; cursor: pointer;
+      transition: background 0.2s;
+    }
+    button#predictBtn:hover { background: #2d6a0e; }
+    button#predictBtn:disabled { background: #aaa; cursor: not-allowed; }
+
+    #result { margin-top: 1.5rem; display: none; }
+    .result-badge {
+      display: inline-block; padding: 0.3rem 0.8rem;
+      border-radius: 20px; font-weight: 600; font-size: 0.85rem;
+    }
+    .badge-disease { background: #ffe0e0; color: #c00; }
+    .badge-healthy { background: #e0f5e0; color: #2a7a2a; }
+    .result-row { margin: 0.5rem 0; font-size: 0.95rem; }
+    .result-row span { font-weight: 600; }
+    .confidence-bar {
+      height: 10px; background: #ddd; border-radius: 5px; overflow: hidden;
+      margin-top: 4px;
+    }
+    .confidence-fill {
+      height: 100%; border-radius: 5px; background: #3a8c1c;
+      transition: width 0.6s ease;
+    }
+    .warning { color: #c07000; font-size: 0.85rem; margin-top: 0.4rem; }
+    #error { color: #c00; margin-top: 1rem; font-size: 0.9rem; display: none; }
+  </style>
+</head>
+<body>
+  <h1>🌿 Plant Disease Detector</h1>
+  <p class="subtitle">Upload a leaf image to diagnose plant health</p>
+
+  <div class="card">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*"/>
+      <p>📷 Click or drag & drop a leaf image here</p>
+      <p style="font-size:0.8rem;color:#888;margin-top:4px">PNG, JPG, WEBP • max 16MB</p>
+      <img id="preview" alt="Preview"/>
+    </div>
+
+    <button id="predictBtn" disabled>Analyze Image</button>
+
+    <div id="error"></div>
+
+    <div id="result">
+      <hr style="margin:1rem 0;border:none;border-top:1px solid #eee"/>
+      <div id="badge"></div>
+      <div class="result-row" style="margin-top:0.6rem">🌱 Plant: <span id="rPlant"></span></div>
+      <div class="result-row">🦠 Disease: <span id="rDisease"></span></div>
+      <div class="result-row">Confidence: <span id="rConf"></span>%
+        <div class="confidence-bar"><div class="confidence-fill" id="confBar"></div></div>
+      </div>
+      <div class="warning" id="rWarning"></div>
+    </div>
+  </div>
+
+  <script>
+    const dropZone   = document.getElementById('dropZone');
+    const fileInput  = document.getElementById('fileInput');
+    const preview    = document.getElementById('preview');
+    const predictBtn = document.getElementById('predictBtn');
+    const errorDiv   = document.getElementById('error');
+    const resultDiv  = document.getElementById('result');
+    let selectedFile = null;
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+    function handleFile(file) {
+      selectedFile = file;
+      const reader = new FileReader();
+      reader.onload = e => {
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+      predictBtn.disabled = false;
+      resultDiv.style.display = 'none';
+      errorDiv.style.display = 'none';
+    }
+
+    predictBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      predictBtn.disabled = true;
+      predictBtn.textContent = 'Analyzing…';
+      errorDiv.style.display = 'none';
+      resultDiv.style.display = 'none';
+
+      const fd = new FormData();
+      fd.append('image', selectedFile);
+
+      try {
+        const res  = await fetch('/api/predict', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Prediction failed');
+
+        document.getElementById('rPlant').textContent   = data.plant;
+        document.getElementById('rDisease').textContent = data.disease;
+        document.getElementById('rConf').textContent    = data.confidence;
+        document.getElementById('confBar').style.width  = data.confidence + '%';
+        document.getElementById('rWarning').textContent = data.warning || '';
+
+        const badge = document.getElementById('badge');
+        badge.innerHTML = `<span class="result-badge ${data.is_healthy ? 'badge-healthy' : 'badge-disease'}">
+          ${data.is_healthy ? '✅ Healthy' : '⚠️ Disease Detected'}
+        </span>`;
+
+        resultDiv.style.display = 'block';
+      } catch (err) {
+        errorDiv.textContent = '❌ ' + err.message;
+        errorDiv.style.display = 'block';
+      } finally {
+        predictBtn.disabled  = false;
+        predictBtn.textContent = 'Analyze Image';
+      }
+    });
+  </script>
+</body>
+</html>

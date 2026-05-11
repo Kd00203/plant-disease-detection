@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+venv/
+.env
+*.env
+
+# Model weights (large files — use Git LFS or share via link)
+model/saved_model/*.keras
+model/saved_model/*.h5
+model/training_history.json
+
+# Dataset
+data/train/
+data/test/
+static/uploads/*
+!static/uploads/.gitkeep
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
